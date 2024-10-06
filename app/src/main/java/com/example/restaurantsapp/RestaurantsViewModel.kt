@@ -3,6 +3,14 @@ package com.example.restaurantsapp
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.Call
@@ -12,9 +20,13 @@ import retrofit2.Response
 class RestaurantsViewModel(
     private val stateHandle: SavedStateHandle
 ) : ViewModel() {
+    private val errorHandler =
+        CoroutineExceptionHandler { _, exception ->
+            exception.printStackTrace()
+        }
+
     private var restInterface: RestaurantsApiService
     val state = mutableStateOf(emptyList<Restaurant>())
-    private lateinit var restaurantsCall: Call<List<Restaurant>>
 
     init {
         val retrofit: Retrofit = Retrofit.Builder()
@@ -58,22 +70,19 @@ class RestaurantsViewModel(
     }
 
     private fun getRestaurants() {
-        restaurantsCall = restInterface.getRestaurants()
-        restaurantsCall.enqueue(object : Callback<List<Restaurant>> {
-            override fun onResponse(call: Call<List<Restaurant>>, response: Response<List<Restaurant>>) {
-                response.body()?.let { restaurants ->
-                    state.value = restaurants.restoreSelections()
-                }
+        viewModelScope.launch(errorHandler) {
+            val restaurants = getRemoteRestaurants()
+            withContext(Dispatchers.Main){
+                state.value = restaurants.restoreSelections()
             }
-
-            override fun onFailure(call: Call<List<Restaurant>>, t: Throwable) {
-                t.printStackTrace()
             }
-        })
-    }
+        }
 
-    override fun onCleared() {
-        super.onCleared()
-        restaurantsCall.cancel()
+    private suspend fun getRemoteRestaurants():List<Restaurant>{
+        return withContext(Dispatchers.IO){
+            restInterface.getRestaurants()
+        }
     }
 }
+
+
